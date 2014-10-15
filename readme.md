@@ -8,3 +8,6 @@
 - http://gotofritz.net/blog/weekly-challenge/restful-python-api-bottle/
 - http://myadventuresincoding.wordpress.com/2011/01/02/creating-a-rest-api-in-python-using-bottle-and-mongodb/
 - https://www.digitalocean.com/community/tutorials/how-to-use-the-bottle-micro-framework-to-develop-python-web-apps
+
+- http://www.one-tab.com/page/jFef4NmBS8-N253e_Y6b5g
+- http://www.one-tab.com/page/gR-hHFx_QsqCO0kmYOELLg
