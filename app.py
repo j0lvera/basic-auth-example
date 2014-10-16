@@ -1,8 +1,16 @@
 import bottle
-from bottle import Bottle, route, run, response, install, request
+from bottle import Bottle, route, run, response, install, request, abort
 from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
 from passlib.hash import pbkdf2_sha256
+from redis import StrictRedis as Redis
+from hashids import Hashids
+from random import randint
 
+# Redis 
+redis = Redis(host='localhost', port=6379, db=0)
+
+# Mongo
+from bson import ObjectId
 from bson.json_util import dumps
 
 DATABASE_HOST = 'localhost'
@@ -17,6 +25,24 @@ db = connection[DATABASE_NAME]
 users = db.users
 
 # Methods
+def generate_token(email, password):
+    salt = str(email+password)
+
+    # Hashids config
+    hashids = Hashids(salt=salt, min_length="16")
+
+    # Incremental id
+    incr = users.find().count()
+
+    # Generating token
+    token = hashids.encrypt(incr, randint(0, incr)) 
+    return token
+
+def save_token(email, token):
+    user_id = "token:" + email
+    redis.set(user_id, token)
+    redis.expire(user_id, 86400)
+
 def get_get(name, default=''):
     return request.GET.get(name, default).strip()
 
@@ -27,8 +53,10 @@ def hash_pass(password):
     return pbkdf2_sha256.encrypt(password, rounds=8000, salt_size=16)
 
 def check_pass(email, password):
-    hashed = ''.join("""get password from db""")
-    return pbkdf2_sha256.verify(password, hashed)
+    password_hashed = ''.join(users.find({'email': email})['password'])
+    return pbkdf2_sha256.verify(password, password_hashed)
+
+# def check_token(email, token):
 
 # Enable cors decorator
 def enable_cors(fn):
@@ -53,25 +81,30 @@ def hello():
 
 @route('/login', method='POST')
 @enable_cors
+@auth_basic(check_pass)
 def login():
-    email = post_get('email')
-    password = post_get('password')
-    password_hashed = hash_pass(password)
+    return { 'token': 'figure out how to create a token' }
 
-@route('/create', method=['OPTIONS', 'POST'])
+@route('/signup', method=['OPTIONS', 'POST'])
 @enable_cors
 def create():
     email = post_get('email')
     password = post_get('password')
+    if email is None or password is None:
+        abort(401, "Access Denied") # missing arguments
+    if users.find_one({'email': email}) is not None: # look for the username
+        abort(400, "Existing User") #existing user
     password_hashed = hash_pass(password)
-    if not email or not password:
-        abort(401, "Access Denied")
-    else:
-        users.insert({'email': email, 'password': password_hashed})
+    users.insert({'email': email, 'password': password_hashed})
+    token = generate_token(email, password_hashed)
+    save_token(email, token)
+    return {'token': token}
 
 @route('/show', method='GET')
 @enable_cors
 def show():
-    return dumps(users.find())
+    result = users.find_one({'email': 'thinkxl@gmail.com'})['password']
+
+    return dumps(result)
 
 run(host='0.0.0.0', port='8080', reloader=True)
