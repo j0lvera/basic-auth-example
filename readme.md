@@ -13,3 +13,9 @@
 - http://www.one-tab.com/page/gR-hHFx_QsqCO0kmYOELLg
 
 - https://gist.github.com/thinkxl/8296214
+
+## TODO
+
+- Check if different salt for each user would be the right way to do it, at the moment of login 
+- On `/login` route check if check_pass would be used as decorator or function
+- On `/login` need to check if token is available and return it, if not, generate a new one if user/password are good

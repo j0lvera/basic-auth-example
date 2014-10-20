@@ -1,5 +1,5 @@
 import bottle
-from bottle import Bottle, route, run, response, install, request, abort
+from bottle import Bottle, route, run, response, install, request, abort, parse_auth, auth_basic
 from itsdangerous import TimedJSONWebSignatureSerializer as Serializer
 from passlib.hash import pbkdf2_sha256
 from redis import StrictRedis as Redis
@@ -26,22 +26,26 @@ users = db.users
 
 # Methods
 def generate_token(email, password):
-    salt = str(email+password)
+    salt = str(email + password) 
+    print "salt: " + salt
 
     # Hashids config
     hashids = Hashids(salt=salt, min_length="16")
 
     # Incremental id
-    incr = users.find().count()
+    incr = users.find_one({'email': email})['_id']
+    print "userid: " + str(incr)
 
     # Generating token
     token = hashids.encrypt(incr, randint(0, incr)) 
+    print "token : " + str(token)
     return token
 
 def save_token(email, token):
     user_id = "token:" + email
     redis.set(user_id, token)
     redis.expire(user_id, 86400)
+    print "token: " + token + ", from: " + str(email) + " saved on redis db"
 
 def get_get(name, default=''):
     return request.GET.get(name, default).strip()
@@ -95,7 +99,7 @@ def create():
     if users.find_one({'email': email}) is not None: # look for the username
         abort(400, "Existing User") #existing user
     password_hashed = hash_pass(password)
-    users.insert({'email': email, 'password': password_hashed})
+    users.insert({'_id': users.find().count() + 1, 'email': email, 'password': password_hashed})
     token = generate_token(email, password_hashed)
     save_token(email, token)
     return {'token': token}
@@ -103,7 +107,9 @@ def create():
 @route('/show', method='GET')
 @enable_cors
 def show():
-    result = users.find_one({'email': 'thinkxl@gmail.com'})['password']
+    # result = users.find_one({'email': 'thinkxl@gmail.com'})['password']
+    result = users.find()
+    # result = users.find_one({'email': 'thinkxl@gmail.com'})['_id']
 
     return dumps(result)
 
