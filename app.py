@@ -26,25 +26,15 @@ users = db.users
 # Methods
 def generate_token(email, password):
     salt = str(email + password) 
-    print "salt: " + salt
-
-    # Hashids config
-    hashids = Hashids(salt=salt, min_length="16")
-
-    # Incremental id
-    incr = users.find_one({'email': email})['_id']
-    print "userid: " + str(incr)
-
-    # Generating token
-    token = hashids.encrypt(incr, randint(0, incr)) 
-    print "token : " + str(token)
+    hashids = Hashids(salt=salt, min_length="82") # Hashids config
+    incr = users.find_one({'email': email})['_id'] # Incremental id
+    token = hashids.encrypt(incr, randint(0, incr)) # Generate token
     return token
 
 def save_token(email, token):
     user_id = "token:" + email
     redis.set(user_id, token)
     redis.expire(user_id, 86400)
-    print "token: " + token + ", from: " + str(email) + " saved on redis db"
 
 def get_get(name, default=''):
     return request.GET.get(name, default).strip()
@@ -56,12 +46,10 @@ def hash_pass(password):
     return pbkdf2_sha256.encrypt(password, rounds=8000, salt_size=16)
 
 def check_pass(email, password):
-    print email
-    print password
     password_hashed = users.find_one({'email': email})['password']
-    print password_hashed
-    print pbkdf2_sha256.verify(password, password_hashed)
     return pbkdf2_sha256.verify(password, password_hashed)
+
+# def check_token(token):
 
 # Enable cors decorator
 def enable_cors(fn):
@@ -87,14 +75,15 @@ def hello():
 @enable_cors
 @auth_basic(check_pass)
 def get_token():
-    print request.headers.get('Authorization')
-    return {200: 'yo'}
+    auth = request.headers.get('Authorization') # get Auth headers
+    email, password = parse_auth(auth) # pull email and password from headers
+    token = generate_token(email, password) # generate token with email and password
+    save_token(email, token) # save token on redis
+    return {'token': token} # return token to the user
 
 @route('/api/user/', method=['OPTIONS', 'POST'])
 @enable_cors
 def create():
-    email = post_get('email')
-    password = post_get('password')
     print (email is None)
     print (password is None)
     if (email == '') or (password == ''):
