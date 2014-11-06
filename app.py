@@ -1,14 +1,22 @@
 import bottle
 from bottle import Bottle, route, run, response, install, request, abort, parse_auth, auth_basic, error, hook
-from passlib.hash import pbkdf2_sha256
+from passlib.hash import pbkdf2_sha256, md5_crypt
 from redis import StrictRedis as Redis
+from itsdangerous import JSONWebSignatureSerializer as Sign
 from hashids import Hashids
 from random import randint
 
-# Redis 
+USER_ID_SALT = 'JtuD-wTBex24zec7 M67SZT6E6SjmiC TciddY6tE6-yhYmRoBDzeMMH5xUB2kExCzem7tPU9j9nopDva-nddQggyLuFX_c_4edXZTF9ueUKX-vp2j27-zvfTC5fs'
+TOKEN_SALT = 'yVnWkuwcGUXq9vggQtY_e4thKmadeTiLAouTQ9m 7 mA4H 8pvtHsqiP_Q8xapTLehxjT9iJ3PNuhK2k4_fvx8j_We_D_Vu-edyS7GBaUgpU_vmSMxtysSohBdCwM'
+SIGN_SALT = 'pEoBD9CAbA_5ijkok-wCGhRqT 9yfQJzB4mP-TFdKczG2UJoLa4vzmoh-2LXY8nZR5_JhNZwfAxequoS-5XSYCpg m9RiUCFLKxNN2ji82ni-H7PRB ygwjw37pNZ'
+
+# Itsdangerous setup
+s = Sign(SIGN_SALT)
+
+# Redis Setup
 redis = Redis(host='localhost', port=6379, db=0)
 
-# Mongo
+# Mongo Setup
 from bson import ObjectId
 from bson.json_util import dumps
 
@@ -24,11 +32,17 @@ db = connection[DATABASE_NAME]
 users = db.users
 
 # Methods
+def incr():
+    return users.find().count() + 1
+
 def generate_token(email, password):
+    # TODO
+    # Change Hashids for md5_crypt
+    # Separate crypt setup logic from this function
     salt = str(email + password) 
     hashids = Hashids(salt=salt, min_length="82") # Hashids config
-    incr = users.find_one({'email': email})['_id'] # Incremental id
-    token = hashids.encrypt(incr, randint(0, incr)) # Generate token
+    incr_id = incr() # Incremental id
+    token = hashids.encrypt(incr_id, randint(0, incr_id)) # Generate token
     return token
 
 def save_token(email, token):
@@ -49,7 +63,19 @@ def check_pass(email, password):
     password_hashed = users.find_one({'email': email})['password']
     return pbkdf2_sha256.verify(password, password_hashed)
 
-# def check_token(token):
+def check_token(unused, token):
+    token_unsigned = s.loads(token)['token']
+    id, tkn = token_unsigned.split(':',1)
+    try:
+        email = users.find_one({'_id': id})['email']
+        token_stored = redis.get('token:' + email)
+        return token_stored == tkn
+    except:
+        return "User not found"
+
+def gen_id(id, salt):
+    hashids = Hashids(salt=salt, min_length=16)
+    return hashids.encrypt(id)
 
 # Enable cors decorator
 def enable_cors(fn):
@@ -71,19 +97,35 @@ def hello():
     response.headers['Content-type'] = 'application/json'
     return { 'yo': 'sap' } 
 
+@route('/api/test/', method=['OPTIONS', 'GET'])
+@enable_cors
+@auth_basic(check_token)
+def test():
+    auth = request.headers.get('Authorization')
+    email, password = parse_auth(auth)
+    print email
+    print password
+    return {'email': email, 'password': password}
+
 @route('/api/token/', method=['OPTIONS', 'GET'])
 @enable_cors
 @auth_basic(check_pass)
 def get_token():
-    auth = request.headers.get('Authorization') # get Auth headers
-    email, password = parse_auth(auth) # pull email and password from headers
-    token = generate_token(email, password) # generate token with email and password
-    save_token(email, token) # save token on redis
-    return {'token': token} # return token to the user
+    auth = request.headers.get('Authorization')
+    email, password = parse_auth(auth)
+    id = users.find_one({'email': email})['_id']
+    token_server = generate_token(email, password)
+    print "token server: " + token_server
+    save_token(email, token_server)
+    token_client = s.dumps({'token': id + ":" + token_server})
+    print "token client: " + token_client
+    return {'token': token_client}
 
 @route('/api/user/', method=['OPTIONS', 'POST'])
 @enable_cors
 def create():
+    email = post_get('email')
+    password = post_get('password')
     print (email is None)
     print (password is None)
     if (email == '') or (password == ''):
@@ -91,8 +133,9 @@ def create():
     elif users.find_one({'email': email}) is not None: # look for the username
         abort(400, 'Existing User') # Existing user
     else:
+        id = gen_id(users.find().count() + 1, USER_ID_SALT)
         password_hashed = hash_pass(password)
-        users.insert({'_id': users.find().count() + 1, 'email': email, 'password': password_hashed})
+        users.insert({'_id': id, 'email': email, 'password': password_hashed, 'role': 'user'})
         token = generate_token(email, password_hashed)
         save_token(email, token)
 
