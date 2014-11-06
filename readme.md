@@ -1,5 +1,7 @@
 ## help links
 
+- Social auth: https://peterhudec.github.io/authomatic/
+
 - http://www.ipnext.it/blog/python-decorators-for-noobs-a-simple-tutorial
 - http://buildingbrowsergames.com/2010/02/08/getting-started-with-mongodb-python/
 - https://github.com/fiznool/backbone.basicauth
